@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 Real-Time Voltage Monitoring</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background-color: #f1f5f9; color: #334155; padding: 24px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 { text-align: center; margin-bottom: 24px; color: #0f172a; font-size: 1.8rem; }
+        
+        .cards { display: flex; gap: 20px; margin-bottom: 24px; flex-wrap: wrap; }
+        .card { flex: 1; min-width: 260px; background: #ffffff; padding: 24px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); text-align: center; border-top: 5px solid #2563eb; }
+        .card.voltage { border-top-color: #10b981; }
+        .card h3 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; margin-bottom: 8px; }
+        .card .value { font-size: 2.8rem; font-weight: 700; color: #0f172a; }
+        .card .unit { font-size: 0.9rem; color: #64748b; font-weight: 500; }
+
+        .charts { display: flex; gap: 20px; margin-bottom: 24px; flex-wrap: wrap; }
+        .chart-box { flex: 1; min-width: 340px; background: #ffffff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+        .chart-box h3 { font-size: 1rem; margin-bottom: 12px; color: #334155; text-align: center; }
+        
+        .table-box { background: #ffffff; padding: 24px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); overflow-x: auto; }
+        .table-box h3 { font-size: 1.1rem; margin-bottom: 12px; color: #0f172a; }
+        table { width: 100%; border-collapse: collapse; text-align: center; }
+        th, td { padding: 12px; border-bottom: 1px solid #e2e8f0; font-size: 0.95rem; }
+        th { background-color: #f8fafc; color: #475569; font-weight: 600; }
+        tr:hover { background-color: #f8fafc; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Dashboard Monitoring Tegangan Potensiometer (ESP32)</h1>
+        
+        <div class="cards">
+            <div class="card">
+                <h3>Nilai ADC Saat Ini</h3>
+                <div class="value" id="adc-value">0</div>
+                <span class="unit">Resolusi 10-Bit (0 – 1023)</span>
+            </div>
+            <div class="card voltage">
+                <h3>Tegangan Saat Ini</h3>
+                <div class="value" id="voltage-value">0.00</div>
+                <span class="unit">Volt (V)</span>
+            </div>
+        </div>
+
+        <div class="charts">
+            <div class="chart-box">
+                <h3>Grafik ADC vs Waktu</h3>
+                <canvas id="adcChart"></canvas>
+            </div>
+            <div class="chart-box">
+                <h3>Grafik Tegangan vs Waktu</h3>
+                <canvas id="voltageChart"></canvas>
+            </div>
+        </div>
+
+        <div class="table-box">
+            <h3>Riwayat Data Terakhir</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Nilai ADC</th>
+                        <th>Tegangan (V)</th>
+                        <th>Waktu Server</th>
+                    </tr>
+                </thead>
+                <tbody id="table-body">
+                    <tr><td colspan="4">Mengambil data dari server...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // GANTI DENGAN URL Halaman get-data.php DI HOSTING ONLINE ANDA
+        const ONLINE_API_URL = 'http://monitoring-esp32.infinityfreeapp.com/get-data.php';
+
+        const ctxAdc = document.getElementById('adcChart').getContext('2d');
+        const adcChart = new Chart(ctxAdc, {
+            type: 'line',
+            data: { labels: [], datasets: [{ label: 'Nilai ADC', data: [], borderColor: '#2563eb', backgroundColor: 'rgba(37, 99, 235, 0.1)', borderWidth: 2, fill: true, tension: 0.3 }] },
+            options: { responsive: true, scales: { y: { min: 0, max: 1023 } } }
+        });
+
+        const ctxVoltage = document.getElementById('voltageChart').getContext('2d');
+        const voltageChart = new Chart(ctxVoltage, {
+            type: 'line',
+            data: { labels: [], datasets: [{ label: 'Tegangan (V)', data: [], borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)', borderWidth: 2, fill: true, tension: 0.3 }] },
+            options: { responsive: true, scales: { y: { min: 0, max: 3.5 } } }
+        });
+
+        async function fetchSensorData() {
+            try {
+                const response = await fetch(ONLINE_API_URL);
+                const data = await response.json();
+
+                if (Array.isArray(data) && data.length > 0) {
+                    const latest = data[data.length - 1];
+                    document.getElementById('adc-value').innerText = latest.adc_value;
+                    document.getElementById('voltage-value').innerText = parseFloat(latest.voltage).toFixed(2);
+
+                    const timestamps = data.map(item => item.time_formatted);
+                    const adcList = data.map(item => item.adc_value);
+                    const voltageList = data.map(item => item.voltage);
+
+                    adcChart.data.labels = timestamps;
+                    adcChart.data.datasets[0].data = adcList;
+                    adcChart.update('none');
+
+                    voltageChart.data.labels = timestamps;
+                    voltageChart.data.datasets[0].data = voltageList;
+                    voltageChart.update('none');
+
+                    const reversedData = [...data].reverse();
+                    const tableBody = document.getElementById('table-body');
+                    tableBody.innerHTML = reversedData.map(row => `
+                        <tr>
+                            <td>#${row.id}</td>
+                            <td>${row.adc_value}</td>
+                            <td>${parseFloat(row.voltage).toFixed(2)} V</td>
+                            <td>${row.time_formatted}</td>
+                        </tr>
+                    `).join('');
+                }
+            } catch (err) {
+                console.error("Gagal mengambil data:", err);
+            }
+        }
+
+        setInterval(fetchSensorData, 1000);
+        fetchSensorData();
+    </script>
+</body>
+</html>
